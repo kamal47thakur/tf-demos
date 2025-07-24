@@ -1,2 +1,2 @@
-# tf-demos
-GitActionsDeploytoAWSTaraform
+# github-actions-terraform
+github-actions-terraform
