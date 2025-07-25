@@ -1,2 +1,2 @@
-# github-actions-terraformmm
+# github-actions-terraform
 github-actions-terraform
