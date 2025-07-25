@@ -1,5 +1,5 @@
 provider "aws" {
-  region = "us-east-1" # Specify your desired AWS region
+  region = "ap-south-1" # Specify your desired AWS region
 }
 
 resource "aws_instance" "my_ec2_instance" {
