@@ -4,7 +4,7 @@ module "ec2_instance" {
   source  = "terraform-aws-modules/ec2-instance/aws"
 
   name = "single-instance"
-  ami           = "ami-0abcdef1234567890" # Replace with a valid AMI ID for your region
+  ami           = "ami-0abcdef1234567890" # Replace with a valid AMI ID for your regionn
   instance_type = "t3.micro"
   key_name      = "kamal.key"
   monitoring    = true
