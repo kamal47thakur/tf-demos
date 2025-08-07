@@ -22,32 +22,37 @@ jobs:
             aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
             aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
             aws-region: ${{ env.AWS_REGION }}
+            
       - name: Checkout code
         uses: actions/checkout@v4
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
         with:
-          terraform_version: 1.7.4
+          terraform_version: "1.4.0"
 
       - name: Terraform Init
         id: init
-        run: |
-          
-          terraform init
+        run: terraform init
 
+      - name: Terraform Validate
+        id: validate
+        run: terraform validate
+        
       - name: Terraform Plan
         id: plan
-        run: |
-         
-          terraform plan -out=tfplan -input=false
+        if: github.event_name == 'pull_request'
+        run: terraform plan -input=false -no-color -out=tfplan
         continue-on-error: true
-
+        
+      - name: Show Plan
+        id: show
+        if: github.event_name == 'pull_request'
+        run: terraform show -no-color tfplan
+        
       - name: Terraform Apply
-        if: github.ref == 'refs/heads/main' && steps.plan.outputs.exitcode == 2
-        run: |
-         
-          terraform apply -auto-approve tfplan
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        run: terraform apply -auto-approve -input=false
 
       - name: Upload Terraform Plan Artifact
         if: steps.plan.outputs.exitcode == 2
