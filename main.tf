@@ -4,5 +4,8 @@ provider "aws" {
   }
 resource "aws_instance" "jenkins" {
  ami           = "ami-0b32d400456908bf9"
- instance_type = "unknown"
+ instance_type = "t3.micro"
+  tags = {
+     "Name": "jenkins"
+ }
 }
