@@ -3,6 +3,6 @@ provider "aws" {
   profile = "default"
   }
 resource "aws_instance" "jenkins" {
- ami           = "unknown"
+ ami           = "ami-0b32d400456908bf9"
  instance_type = "unknown"
 }
