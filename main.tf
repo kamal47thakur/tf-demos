@@ -1,6 +1,7 @@
 provider "aws" {
   region = "ap-south-1" # Specify your desired AWS region
-  shared_credentials_files = ["/c/Users/HP/.aws/credentials"]
+  profile = "default"
+  #shared_credentials_files = ["C:\\Users\\HP\\.aws\\credentials"]
 }
 
 resource "aws_instance" "my_ec2_instance" {
