@@ -1,0 +1,369 @@
+cat CheckUnixPatchSudo_User.yml;cat copy.yml;cat msdscan.yml;cat tlog.yml
+---
+- hosts: all
+  become: yes
+  become_user: root
+  gather_facts: no
+
+  tasks:
+  - name: Get packages that can be upgraded on TEST servers
+    ansible.builtin.yum:
+      list: updates
+      state: latest
+        #    exclude: java*
+      update_cache: yes
+    register: reg_yum_output_all
+  - name: List packages that will be upgraded on TEST servers
+    ansible.builtin.debug:
+      msg: "{{ reg_yum_output_all.results | map(attribute='name') | list }}"
+---
+  - name: copy Sanity Logs Collect Script
+    hosts: all
+    become: yes
+      #    become_user: root
+    tasks:
+      - name: Copy SanityScript
+        ansible.builtin.copy:
+          src: /home/unixsvc/sanityscript.sh
+          dest: /home/unixsvc/sanityscript.sh
+          owner: unixsvc
+          group: unixsvc
+          mode: '0777'
+          backup: yes
+      - name: Run SanityScript
+        shell: 'mkdir /tmp/sanitylogs;sh /home/unixsvc/sanityscript.sh >>/tmp/sanitylogs/Presanity_$(hostname)-$(date +"%Y-%m-%d-%H-%M-%S");chmod -Rv 777 /tmp/sanitylogs'
+      - name: Fetch SanityLog File from server
+        shell: "ls -l /tmp/sanitylogs/*-$(date +%Y-%m-%d)-* |awk {'print $9'}"
+        register: sanitylogfile
+
+      - name: Download SanityLogs from server to Ansible
+        fetch:
+          src: "{{ sanitylogfile.stdout }}"
+          dest: /home/unixsvc/kdata/playbook/sanitylog/
+          flat: yes
+---
+- hosts: all
+  strategy: free
+  gather_facts: no
+  become: yes
+  tasks:
+  - name: MSD Quick Scan Started
+    shell: sudo /bin/mdatp scan quick;echo;hostname
+    register: scan
+  - name: MSD Scan Result
+    debug:
+      msg: "{{ scan.stdout_lines | to_nice_json}}"
+  - local_action:
+      module: copy
+      content: "{{ scan.stdout_lines | to_nice_json }}"
+      dest: "/tmp/scan.json"
+    delegate_to: localhost
+  - name: MSD Scan Status Report
+    shell: sh msdscancheck.sh
+    delegate_to: localhost
+---
+  - name: Copy TLogs from all server to Ansible Server
+    hosts: all
+    become: yes
+    vars:
+      date: "{{ lookup('pipe', 'date +%b-%d-%Y') }}"
+    tasks:
+     - name: Create Today Tlog Directory
+       ansible.builtin.file:
+          path: /home/unixsvc/tlog/tloglog-{{date}}
+          state: directory
+          mode: '0755'
+          group: unixsvc
+          owner: unixsvc
+       register: local_dir
+       delegate_to: localhost
+     - name: Fetch Tlog File from server
+       shell: "ls -l /var/log/tlog/old/* |awk {'print $9'} |tail -n 1"
+       register: tlogfile
+
+     - name: Download TLogs from server to Ansible
+       fetch:
+          src: "{{ tlogfile.stdout }}"
+          dest: /home/unixsvc/tlog/tloglog-{{date}}/
+          flat: yes
+
+###################################
+
+cat cpumem.sh ;cat os_version.sh;cat sudoFilelist.sh;
+#!/bin/bash
+COUNT=4
+username=unixsvc
+
+echo -e " "Hostname" \t "CPU" \t "MEM1"\t "MEM2"  " > /home/unixsvc/kdata/osversion.xls
+for line in $(cat /home/unixsvc/kdata/serverlist)
+do
+ssh -t $username@$line '(
+host=`hostname`;
+cpu=`cat /proc/cpuinfo |grep -i processor |wc -l`;
+mem=`/usr/bin/sudo /usr/sbin/dmidecode -t memory |grep Size |grep -v Installed`;
+mem2=`/usr/bin/free -m `
+echo -e " "$host" \t "$cpu" \t "$mem" \t "$mem2"  "
+)'  >>/home/unixsvc/kdata/osversion.xls
+done
+echo -e "OS Version report " | mailx  -s "OS Version Report" -a /home/unixsvc/kdata/osversion.xls kamal.kishore@toweswatson.com
+sleep 4
+#!/bin/bash
+COUNT=4
+username=unixsvc
+
+echo -e " "Hostname" \t IP \t "Uptime" \t "OS"  \t "Kernel" \t memory \t CPU \t Swap " > /home/unixsvc/kdata/osversion.xls
+#echo -e " "Hostname" \t "Kernel" " > /home/unixsvc/kdata/osversion.xls
+#for line in $(cat /home/unixsvc/kdata/inventory/ProdList)
+for line in $(cat /home/unixsvc/kdata/testlist)
+do
+ssh -t $username@$line '(
+host=`hostname`;
+ip=`hostname -i`;
+uptime=`uptime |cut -c14-20`;
+os=`cat /etc/os-release |grep PRETTY_NAME |cut -c14-555555`;
+kernel=` uname -r`
+mem=`free -g |grep Mem |cut -c19-25`
+swp=`free -g |grep Swap |cut -c19-25`
+cpu=`lscpu |grep "CPU(s):" |grep -v NUMA |cut -c39-42`
+echo -e " "$host" \t $ip \t "$uptime" \t "$os" \t "$kernel" \t "$mem" \t "$cpu" \t "$swp" "
+#echo -e " "$host" \t "$kernel" "
+)'  >>/home/unixsvc/kdata/osversion.xls
+done
+echo -e "OS Version report " | mutt  -s "OS Version Report"  kamal.kishore@towerswatson.com -a /home/unixsvc/kdata/osversion.xls
+sleep 4
+#!/bin/bash
+COUNT=4
+username=unixsvc
+
+echo -e " "Hostname" \t "SudoFilesList" \t "OS" " > /home/unixsvc/kdata/osversion.xls
+#echo -e " "Hostname" \t "Kernel" " > /home/unixsvc/kdata/osversion.xls
+for line in $(cat /home/unixsvc/kdata/serverlist)
+do
+ssh -t $username@$line '(
+host=`hostname`;
+sudofiles=`sudo ls -l /etc/sudoers.d/ |awk '{print "$9"}'`
+echo -e " "$host" \t "$sudofiles" \t "$os" "
+)'  >>/home/unixsvc/kdata/osversion.xls
+done
+#echo -e "OS Version report " | mailx  -s "OS Version Report" -a /home/unixsvc/kdata/osversion.xls kamal.kishore@toweswatson.com
+sleep 4
+
+##############################
+cat PatchAndRebootSudoUser.yml;cat CheckUnixPatchSudo_User.yml;cat jenkinsFilesystemMigration.yml;cat jenkinsFilesystemMigration.yml;
+---
+  - name: Patch the server and Reboot
+    hosts: all
+    gather_facts: no
+    tasks:
+      - name: Patch the server
+        become: yes
+        become_user: root
+        tags: Patch
+        shell: "yum -y update --skip-broken"
+        register: patchresult
+
+      - name: Reboot the server
+        tags: reboot
+        become: yes
+        become_user: root
+        shell: "sleep 5 && reboot"
+        async: 1
+        poll: 0
+
+      - name: Wait for the reboot to complete if there was a change.
+        wait_for_connection:
+          connect_timeout: 60
+          sleep: 60
+          delay: 60
+          timeout: 300
+
+      - name: Check the Uptime of the servers
+        shell: "uptime"
+        register: Uptime
+
+      - debug: var=Uptime
+---
+- hosts: all
+  become: yes
+  become_user: root
+  gather_facts: no
+
+  tasks:
+  - name: Get packages that can be upgraded on TEST servers
+    ansible.builtin.yum:
+      list: updates
+      state: latest
+        #    exclude: java*
+      update_cache: yes
+    register: reg_yum_output_all
+  - name: List packages that will be upgraded on TEST servers
+    ansible.builtin.debug:
+      msg: "{{ reg_yum_output_all.results | map(attribute='name') | list }}"
+---
+
+- hosts: all
+  become: true
+
+  vars_prompt:
+
+    - name: "vg_name"
+      prompt: "Name of the Volume Group"
+      private: no
+
+    - name: "lv_name"
+      prompt: "Name of the logical Volume"
+      private: no
+
+    - name: "require_lv_size"
+      prompt: "Size of Logical volume to be created."
+      private: no
+
+    - name: "fs"
+      prompt: "Type of filesystem need to be created."
+      private: no
+
+    - name: "mount_point"
+      prompt: "Mount the filesystem under."
+      private: no
+
+
+  tasks:
+
+    - name: Check if Rsync is installed
+      command: which rsync
+      register: rsync_check
+      changed_when: false
+      failed_when: false
+
+    - name: Install Rsync
+      package:
+        name: rsync
+        state: present
+      when: rsync_check.rc != 0
+
+    - name: Rename exising tpd  folder
+      shell: "mv /opt/jenkins /opt/jenkins.old"
+
+
+
+    - name: Create the "{{ lv_name }}" Logical Volume.
+      lvol:
+        vg: "{{ vg_name }}"
+        lv: "{{ lv_name }}"
+        size: "{{ require_lv_size }}"
+        active: yes
+        force: no
+        state: present
+
+
+    - name: Create a "{{ fs }}" filesystem on lvm "/dev/mapper/{{ vg_name}}-{{ lv_name}}".
+      filesystem:
+        fstype: "{{ fs }}"
+        dev: "/dev/mapper/{{ vg_name }}-{{ lv_name }}"
+        force: no
+
+
+    - name: Create a directory to mount the filesystem.
+      file:
+        path: "{{ mount_point }}"
+        state: directory
+        mode: '0775'
+
+
+    - name: Mount the created "{{ fs }}" filesystem.
+      mount:
+        path: "{{ mount_point }}"
+        src: "/dev/mapper/{{ vg_name}}-{{ lv_name}}"
+        fstype: "{{ fs }}"
+        state: mounted
+
+    - name: Rsync Data from httpd.old to httpd
+      shell: "rsync -avhpPHgs /opt/jenkins.old/* /opt/jenkins/"
+
+    - name: Restoring SElinux Context
+      shell: "restorecon -vvRF /opt/jenkins"
+
+---
+
+- hosts: all
+  become: true
+
+  vars_prompt:
+
+    - name: "vg_name"
+      prompt: "Name of the Volume Group"
+      private: no
+
+    - name: "lv_name"
+      prompt: "Name of the logical Volume"
+      private: no
+
+    - name: "require_lv_size"
+      prompt: "Size of Logical volume to be created."
+      private: no
+
+    - name: "fs"
+      prompt: "Type of filesystem need to be created."
+      private: no
+
+    - name: "mount_point"
+      prompt: "Mount the filesystem under."
+      private: no
+
+
+  tasks:
+
+    - name: Check if Rsync is installed
+      command: which rsync
+      register: rsync_check
+      changed_when: false
+      failed_when: false
+
+    - name: Install Rsync
+      package:
+        name: rsync
+        state: present
+      when: rsync_check.rc != 0
+
+    - name: Rename exising tpd  folder
+      shell: "mv /opt/jenkins /opt/jenkins.old"
+
+
+
+    - name: Create the "{{ lv_name }}" Logical Volume.
+      lvol:
+        vg: "{{ vg_name }}"
+        lv: "{{ lv_name }}"
+        size: "{{ require_lv_size }}"
+        active: yes
+        force: no
+        state: present
+
+
+    - name: Create a "{{ fs }}" filesystem on lvm "/dev/mapper/{{ vg_name}}-{{ lv_name}}".
+      filesystem:
+        fstype: "{{ fs }}"
+        dev: "/dev/mapper/{{ vg_name }}-{{ lv_name }}"
+        force: no
+
+
+    - name: Create a directory to mount the filesystem.
+      file:
+        path: "{{ mount_point }}"
+        state: directory
+        mode: '0775'
+
+
+    - name: Mount the created "{{ fs }}" filesystem.
+      mount:
+        path: "{{ mount_point }}"
+        src: "/dev/mapper/{{ vg_name}}-{{ lv_name}}"
+        fstype: "{{ fs }}"
+        state: mounted
+
+    - name: Rsync Data from httpd.old to httpd
+      shell: "rsync -avhpPHgs /opt/jenkins.old/* /opt/jenkins/"
+
+    - name: Restoring SElinux Context
+      shell: "restorecon -vvRF /opt/jenkins"
+
