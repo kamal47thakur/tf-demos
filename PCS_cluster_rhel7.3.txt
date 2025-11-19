@@ -1,0 +1,242 @@
+iqn.2006-01.com.openfiler:tsn.7807a46bd003
+
+pcs stonith create myapc fence_apc_snmp \ipaddr="nodeapc.example.com" pcmk_host_map="node1.example.com:1;node2.example.com:2" \pcmk_host_check="static-list" pcmk_host_list="node1.example.com,node2.example.com" \
+login="apc" passwd="apc"
+
+pcs resource create my_fs Filesystem \device="/dev/my_vg/my_lv" directory="/var/www" fstype="ext4" --group \apachegroup
+
+pcs resource create VirtualIP IPaddr2 ip=198.168.139.130 \cidr_netmask=24 --group apachegroup
+
+pcs resource create Website apache \configfile="/etc/httpd/conf/httpd.conf" \statusurl="http://127.0.0.1/server-status" --group apachegroup
+
+############################################################################################################################################################
+
+############################################CLUSTER CONFIGURATION (PACEMAKER CLUSTER)##################################################################
+
+BASIC SETTINGS
+
+->SET HOSTNAME
+hostnamectl set-hostname       node1.example.com			//node1
+hostnamectl set-hostname       node2.example.com			//node2
+
+vim /etc/hosts								
+192.168.139.129 node1 node1.example.com
+192.168.139.131 node2 node2.example.com
+Reserve ip for 
+Vip    192.168.139.131
+San server Ip 192.168.139.130
+
+# yum install pcs pacemaker fence-agents-all                             //Both node1 and node2
+
+# firewall-cmd --permanent --add-service=high-availability		//Both node1 and node2
+# firewall-cmd --add-service=high-availability				//Both node1 and node2
+
+# passwd hacluster							//Both node1 and node2
+Changing password for user hacluster.
+New password:
+Retype new password:
+passwd: all authentication tokens updated successfully.
+
+
+# systemctl start pcsd.service						//Both node1 and node2
+# systemctl enable pcsd.service						//Both node1 and node2
+
+2. Authenticate the pcs user hacluster for each node in the cluster on the node from which you will be running pcs.
+[root@z1 ~]# pcs cluster auth node1.example.com node2.example.com	//Both node1 and node2
+Username: hacluster
+Password:
+node1.example.com: Authorized
+node2.example.com: Authorized
+1.2. CLUSTER CREATION
+
+[root@z1 ~]# pcs cluster setup --start --name my_cluster \
+	node1.example.com node2.example.com
+	node1.example.com: Succeeded
+	node1.example.com: Starting Cluster...
+	node2.example.com: Succeeded
+	node2.example.com: Starting Cluster...
+Enable the cluster services to run on each node in the cluster when the node is booted
+# pcs cluster enable --all
+
+[root@z1 ~]# pcs cluster status
+Cluster Status:
+ Last updated: Thu Jul 25 13:01:26 2013
+ Last change: Thu Jul 25 13:04:45 2013 via crmd on node2.example.com
+ Stack: corosync
+ Current DC: node2.example.com (2) - partition with quorum
+ Version: 1.1.10-5.el7-9abe687
+ 2 Nodes configured
+ 0 Resources configured
+
+1.3. FENCING CONFIGURATION
+
+[root@z1 ~]# pcs stonith create myapc fence_apc_snmp \
+ipaddr="nodeapc.example.com" pcmk_host_map="node1.example.com:1;node2.example.com:2" \
+pcmk_host_check="static-list" pcmk_host_list="node1.example.com,node2.example.com" \
+login="apc" passwd="apc"
+
+The following command displays the parameters of an existing STONITH device.
+[root@rh7-1 ~]# pcs stonith show myapc
+ Resource: myapc (class=stonith type=fence_apc_snmp)
+  Attributes: ipaddr=nodeapc.example.com pcmk_host_map=node1.example.com:1;node2.example.com:2 pcmk_host_check=static-list pcmk_host_list=node1.example.com,node2.example.com login=apc passwd=apc
+  Operations: monitor interval=60s (myapc-monitor-interval-60s)
+
+
+CHAPTER 2. AN ACTIVE/PASSIVE APACHE HTTP SERVER IN A RED HAT HIGH AVAILABILITY CLUSTER
+2.1. CONFIGURING AN LVM VOLUME WITH AN EXT4 FILE SYSTEM
+
+Since the /dev/sdc1 partition is storage that is shared, you perform this procedure on one node only,
+Create an LVM physical volume on partition /dev/sdc1.
+	# pvcreate /dev/sdc1
+	  Physical volume "/dev/sdc1" successfully created
+Create the volume group my_vg that consists of the physical volume /dev/sdc1.
+	# vgcreate my_vg /dev/sdc1
+	  Volume group "my_vg" successfully created
+Create a logical volume using the volume group my_vg.
+	# lvcreate -L450 -n my_lv my_vg
+	  Rounding up size to full physical extent 452.00 MiB
+	  Logical volume "my_lv" created
+
+# lvs
+  LV      VG      Attr      LSize   Pool Origin Data%  Move Log Copy%  Convert
+  my_lv   my_vg   -wi-a---- 452.00m
+  ...
+Create an ext4 file system on the logical volume my_lv.
+	# mkfs.ext4 /dev/my_vg/my_lv
+	mke2fs 1.42.7 (21-Jan-2013)
+	Filesystem label=
+	OS type: Linux
+2.2. WEB SERVER CONFIGURATION
+	# yum install -y httpd wget
+In order for the Apache resource agent to get the status of the Apache HTTP server, ensure that the following text is present in the /etc/httpd/conf/httpd.conf file on each node in the cluster, and ensure that it has not been commented out. If this text is not already present, add the text to the end of the file.
+	<Location /server-status>
+	    SetHandler server-status
+	    Require local
+	</Location> 
+
+When you use the apache resource agent to manage Apache, it does not use systemd. Because of this, you must edit the logrotate script supplied with Apache so that it does not use systemctl to reload Apache.
+Remove the following line in the /etc/logrotate.d/httpd file on each node in the cluster.
+
+/bin/systemctl reload httpd.service > /dev/null 2>/dev/null || true
+
+Replace the line you removed with the following line.
+
+/usr/sbin/httpd -f /etc/httpd/conf/httpd.conf -c "PidFile 
+/var/run/httpd.pid" -k graceful > /dev/null 2>/dev/null || true
+
+
+Create a web page for Apache to serve up. On one node in the cluster, mount the file system you created in Section 2.1, “Configuring an LVM Volume with an ext4 File System”, create the file index.html on that file system, then unmount the file system.
+	# mount /dev/my_vg/my_lv /var/www/
+	# mkdir /var/www/html
+	# mkdir /var/www/cgi-bin
+	# mkdir /var/www/error
+	# restorecon -R /var/www
+	# cat <<-END >/var/www/html/index.html
+	<html>
+	<body>Hello</body>
+	</html>
+	END
+       # umount /var/www
+2.3. EXCLUSIVE ACTIVATION OF A VOLUME GROUP IN A CLUSTER
+
+Perform the following procedure on each node in the cluster.
+
+Execute the following command to ensure that locking_type is set to 1 and that use_lvmetad is set to 0 in the /etc/lvm/lvm.conf file. This command also disables and stops any lvmetad processes immediately.
+
+# lvmconf --enable-halvm --services --startstopservices
+
+Determine which volume groups are currently configured on your local storage with the following command.
+	# vgs --noheadings -o vg_name
+	  my_vg        
+	  rhel_home
+	  rhel_root
+Add the volume groups other than my_vg (the volume group you have just defined for the cluster) as entries to volume_list in the /etc/lvm/lvm.conf configuration file.
+
+volume_list = [ "rhel_root", "rhel_home" ]
+
+Rebuild the initramfs boot image to guarantee that the boot image will not try to activate a volume group controlled by the cluster. Update the initramfs device with the following command. This command may take up to a minute to complete.
+
+	# dracut -H -f /boot/initramfs-$(uname -r).img $(uname -r)
+Reboot the node.
+# pcs cluster start
+# pcs cluster start --all
+
+2.4. CREATING THE RESOURCES AND RESOURCE GROUPS WITH THE PCS COMMAND
+	[root@z1 ~]# pcs resource create my_lvm LVM volgrpname=my_vg \exclusive=true --group apachegroup
+
+When you create a resource, the resource is started automatically. You can use the following command to confirm that the resource was created and has started.
+# pcs resource show
+ Resource Group: apachegroup
+     my_lvm	(ocf::heartbeat:LVM):	Started
+You can manually stop and start an individual resource with the pcs resource disable and pcs resource enable commands.
+	The following commands create the remaining resources for the configuration, adding them to the existing resource group apachegroup.
+	[root@z1 ~]# pcs resource create my_fs Filesystem \device="/dev/my_vg/my_lv" directory="/var/www" fstype="ext4" --group \apachegroup
+
+	[root@z1 ~]# pcs resource create VirtualIP IPaddr2 ip=198.168.139.132 \cidr_netmask=24 --group apachegroup
+	
+	[root@z1 ~]# pcs resource create Website apache \configfile="/etc/httpd/conf/httpd.conf" \statusurl="http://127.0.0.1/server-status" --group apachegroup
+
+After creating the resources and the resource group that contains them, you can check the status of the cluster. Note that all four resources are running on the same node.
+	[root@z1 ~]# pcs status
+	Cluster name: my_cluster
+	Last updated: Wed Jul 31 16:38:51 2013
+	Last change: Wed Jul 31 16:42:14 2013 via crm_attribute on node1.example.com
+	Stack: corosync
+	Current DC: node2.example.com (2) - partition with quorum
+	Version: 1.1.10-5.el7-9abe687
+	2 Nodes configured
+	6 Resources configured
+	
+	
+	Online: [ node1.example.com node2.example.com ]
+	
+	Full list of resources:
+	 myapc	(stonith:fence_apc_snmp):	Started node1.example.com 
+	 Resource Group: apachegroup
+	     my_lvm	(ocf::heartbeat:LVM):	Started node1.example.com 
+	     my_fs	(ocf::heartbeat:Filesystem):	Started node1.example.com 
+	     VirtualIP	(ocf::heartbeat:IPaddr2):	Started node1.example.com 
+	     Website	(ocf::heartbeat:apache):	Started node1.example.com
+
+Note that if you have not configured a fencing device for your cluster, 
+as described in Section 1.3, “Fencing Configuration”, by default the resources do not start.
+Once the cluster is up and running, you can point a browser to the IP address you defined as 
+the IPaddr2 resource to view the sample display, consisting of the simple word "Hello".
+
+	Hello
+
+If you find that the resources you configured are not running, you can run the pcs resource debug-start resource command to test the resource configuration. For information on the pcs resource debug-start command, see the High Availability Add-On Reference manual.
+2.5. TESTING THE RESOURCE CONFIGURATION
+
+In the cluster status display shown in Section 2.4, “Creating the Resources and Resource Groups with the pcs Command”, all of the resources are running on node node1.example.com. You can test whether the resource group fails over to node node2.example.com by using the following procedure to put the first node in standby mode, after which the node will no longer be able to host resources.
+The following command puts node node1.example.com in standby mode.
+
+	root@z1 ~]# pcs cluster standby node1.example.com
+After putting node z1 in standby mode, check the cluster status. Note that the resources should now all be running on z2.
+	[root@z1 ~]# pcs status
+	Cluster name: my_cluster
+	Last updated: Wed Jul 31 17:16:17 2013
+	Last change: Wed Jul 31 17:18:34 2013 via crm_attribute on node1.example.com
+	Stack: corosync
+	Current DC: node2.example.com (2) - partition with quorum
+	Version: 1.1.10-5.el7-9abe687
+	2 Nodes configured
+	6 Resources configured
+	
+	
+	Node node1.example.com (1): standby
+	Online: [ node2.example.com ]
+	
+	Full list of resources:
+	
+	 myapc	(stonith:fence_apc_snmp):	Started node1.example.com 
+	 Resource Group: apachegroup
+	     my_lvm	(ocf::heartbeat:LVM):	Started node2.example.com 
+	     my_fs	(ocf::heartbeat:Filesystem):	Started node2.example.com 
+	     VirtualIP	(ocf::heartbeat:IPaddr2):	Started node2.example.com 
+	     Website	(ocf::heartbeat:apache):	Started node2.example.com
+The web site at the defined IP address should still display, without interruption.
+
+To remove z1 from standby mode, enter the following command.
+	root@z1 ~]# pcs cluster unstandby node1.example.com
+

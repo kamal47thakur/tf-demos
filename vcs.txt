@@ -1,0 +1,112 @@
+8300*5 = 41500
+7546   = 7546
+2500*5 = 12500
+5000*5 = 25000
+2000*5 = 10000
+3895*5 =19475
+
+A gentle reminder..!!! Status please.
+
+Please share the current status of this issue.
+
+https://sfo-app-prd.cisco.com/gui/#/requests/
+
+corba gateway -->
+
+
+3 in year ---  14 days --->
+jan-dec -->
+on call support ->
+out of india --> pick call 
+issue -> customer ---> 10-15 minutes 
+inform to other if not pick call
+gaurav
+pankaj
+rohit
+
+
+clusvcadm -d CTM_SRV
+clusvcadm -e CTM_SRV
+
+Required Output
+cat /etc/redhat-release
+clustat
+uptime
+What is the current status of CPO? Is it working ?
+What is the issue ?Is the issue still present.
+What is the time when issue occurs?
+Please share the /var/log/mesage logs of Jan 7 2021
+
+Please share the output of below command
+
+cat /etc/redhat-release
+uptime
+who -b
+/var/log/cluster/fenced.log
+/var/log/cluster/rgmanager.log
+
+
+clustat
+/etc/cluster/cluster.conf
+https://luci_server_hostname:8084
+
+Jan  7 01:29:38 cpoqro01 rgmanager[12630]: [script] Executing /cisco/PrimeOpticalServer/HA/bin/CtmAgent.py status
+Jan  7 01:29:38 cpoqro01 abrt: detected unhandled Python exception in '/cisco/PrimeOpticalServer/HA/bin/CtmAgent.py'
+Jan  7 01:29:38 cpoqro01 abrtd: New client connected
+Jan  7 01:29:38 cpoqro01 abrtd: Directory 'pyhook-2021-01-07-01:29:38-12652' creation detected
+Jan  7 01:29:38 cpoqro01 abrt-server[12696]: Saved Python crash dump of pid 12652 to /var/spool/abrt/pyhook-2021-01-07-01:29:38-12652
+Jan  7 01:29:38 cpoqro01 rgmanager[12700]: [script] script:CTM_SRV: status of /cisco/PrimeOpticalServer/HA/bin/CtmAgent.py failed (returned 1)
+Jan  7 01:29:38 cpoqro01 rgmanager[20569]: status on script "CTM_SRV" returned 1 (generic error)
+Jan  7 01:29:38 cpoqro01 rgmanager[20569]: Stopping service service:ctm_service
+Jan  7 01:29:38 cpoqro01 rgmanager[12732]: [script] Executing /cisco/PrimeOpticalServer/HA/bin/ApacheAgent.py stop
+Jan  7 01:29:39 cpoqro01 abrtd: Package 'HA' isn't signed with proper key
+Jan  7 01:29:39 cpoqro01 abrtd: 'post-create' on '/var/spool/abrt/pyhook-2021-01-07-01:29:38-12652' exited with 1
+Jan  7 01:29:39 cpoqro01 abrtd: Deleting problem directory '/var/spool/abrt/pyhook-2021-01-07-01:29:38-12652'
+
+Jan  7 01:45:19 cpoqro01 rgmanager[20569]: #12: RG service:ctm_service failed to stop; intervention required
+Jan  7 01:45:19 cpoqro01 rgmanager[20569]: Service service:ctm_service is failed
+
+
+
+Sulution
+
+Check for abrtd
+On RedHat derived Linux distributions (OEL, CentOS, etc), abrtd is the default tool for handling core dumps (among other functions).
+
+You can check to see if this is the case on your platform by running the following command:
+
+# cat /proc/sys/kernel/core_pattern
+Sample output might look like this:
+
+|/usr/libexec/abrt-hook-ccpp %s %c %p %u %g %t e
+The above indicates that crashed process output is piped to abrtd.
+
+On RedHat derived platforms (OEL, CentOS, etc) abrtd itself will delete core files from software installed from an unsigned rpm package. You can modify this behavior by following the instructions below.
+
+Environment
+Operating System: Linux
+
+Instructions
+Locate and open the following file:
+
+/etc/abrt/abrt-action-save-package-data.conf
+The value for OpenGPGCheck should be changed from yes to no.
+
+OpenGPGCheck = no
+It might also be necessary to change the value of limit coredumpsize:
+
+limit coredumpsize unlimited
+After editing the file restart the process with the following command:
+
+# service abrtd restart
+   
+
+################ Pacemake commands  
+
+PaceMaker cluster Important Configuration Files and Directories
+/var/lib/pacemaker/cib/cib.xml: Cluster configuration file
+/var/log/cluster/corosync.log: Corosync log file
+/etc/sysconfig/pacemaker: Pacemaker configuration file
+/var/log/pacemaker.log: Pacemaker log file
+/usr/lib/ocf/resource.d/heartbeat: Directory where all the cluster resource scripts are available
+
