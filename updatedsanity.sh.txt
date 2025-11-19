@@ -1,10 +1,5 @@
 #! /bin/bash
-# Written By - Rahul Chopra for internal use in GE Captal Account
-# Creation Date : 17th September 2018
-# Revised By - Rahul Chopra
-# Revision Date : 18th September 2018
-# HP-DC Support Team
-#
+
 # This script is used to do basic OS Sanity check
 
 
@@ -224,3 +219,4 @@ echo "=====================Installed RPM List===================================
 rpm -qa |nl;
 echo "==============Kernel Parameters============================================"
 sysctl -a |nl;
+
